@@ -2,8 +2,6 @@ sed on original code by Andrej Karpathy. Enhancements and modifications by Under
 ```markdown
 # 🏛️ LLM Council: Enhanced Edition (by UnderPlayer)
 
-![llmcouncil](header.jpg)
-
 *Based on the original weekend hack by [Andrej Karpathy](https://github.com/karpathy). Heavily modified, optimized, and expanded by UnderPlayer673.*
 
 ## 🚀 What's New in This Enhanced Edition?
