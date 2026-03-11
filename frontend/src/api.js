@@ -2,7 +2,7 @@
  * API client for the LLM Council backend.
  */
 
-const API_BASE = 'http://localhost:8001';
+const API_BASE = 'https://underplayer-council-api.onrender.com';
 
 export const api = {
   /**
