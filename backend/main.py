@@ -10,14 +10,22 @@ import json
 import asyncio
 
 from . import storage
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
+from .config import CHAIRMAN_MODEL, COUNCIL_MODELS
+from .council import (
+    calculate_aggregate_rankings,
+    generate_conversation_title,
+    run_full_council,
+    stage1_collect_responses,
+    stage2_collect_rankings,
+    stage3_synthesize_final,
+)
 
 app = FastAPI(title="LLM Council API")
 
-# Enable CORS for local development
+# Enable CORS for cloud/browser clients
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,6 +44,7 @@ class SendMessageRequest(BaseModel):
     chairman_model: Optional[str] = None
     temperature: Optional[float] = None
     override_chains: Optional[Dict[str, List[str]]] = None
+    api_keys: Optional[Dict[str, Optional[str]]] = None
     force_russian: Optional[bool] = False
     system_prompt: Optional[str] = None
 
@@ -140,12 +149,17 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
 
     # If this is the first message, generate a title
     if is_first_message:
-        title = await generate_conversation_title(request.content)
+        title = await generate_conversation_title(request.content, api_keys=request.api_keys)
         storage.update_conversation_title(conversation_id, title)
 
     # Run the 3-stage council process
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
-        request.content
+        request.content,
+        council_models=request.council_models or COUNCIL_MODELS,
+        chairman_model=request.chairman_model or CHAIRMAN_MODEL,
+        temperature=request.temperature,
+        override_chains=request.override_chains,
+        api_keys=request.api_keys,
     )
 
     # Add assistant message with all stages
@@ -212,7 +226,9 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             # Start title generation in parallel
             title_task = None
             if is_first_message:
-                title_task = asyncio.create_task(generate_conversation_title(request.content))
+                title_task = asyncio.create_task(
+                    generate_conversation_title(request.content, api_keys=request.api_keys)
+                )
 
             # Stage 1: Collect responses
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
@@ -221,7 +237,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 history=history,
                 council_models=request.council_models or COUNCIL_MODELS,
                 temperature=request.temperature,
-                override_chains=request.override_chains
+                override_chains=request.override_chains,
+                api_keys=request.api_keys,
             )
             
             # Save Stage 1 to DB immediately for persistence on refresh
@@ -240,7 +257,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 history=history,
                 council_models=request.council_models or COUNCIL_MODELS,
                 temperature=request.temperature,
-                override_chains=request.override_chains
+                override_chains=request.override_chains,
+                api_keys=request.api_keys,
             )
             aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
             
@@ -261,7 +279,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 history=history,
                 chairman_model=request.chairman_model or CHAIRMAN_MODEL,
                 temperature=request.temperature,
-                override_chains=request.override_chains
+                override_chains=request.override_chains,
+                api_keys=request.api_keys,
             )
             
             # Save Stage 3 with metadata to DB

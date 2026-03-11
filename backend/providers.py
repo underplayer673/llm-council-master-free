@@ -1,9 +1,10 @@
 """Provider handling with team failover logic."""
 
-import time
-import httpx
 import asyncio
-from typing import List, Dict, Any, Optional, Tuple
+import time
+from typing import Any, Dict, List, Optional
+
+import httpx
 from .config import (
     PROVIDER_CHAINS, 
     OPENROUTER_API_KEY, 
@@ -38,11 +39,37 @@ class ProviderTeam:
 # Global teams registry
 TEAMS = {name: ProviderTeam(name, models) for name, models in PROVIDER_CHAINS.items()}
 
-async def query_google(model: str, messages: List[Dict[str, str]], timeout: float = 20.0, temperature: Optional[float] = None) -> Optional[Dict[str, Any]]:
+
+def resolve_api_key(
+    provider: str,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
+) -> Optional[str]:
+    """Return a per-request API key, falling back to environment config."""
+    request_keys = api_keys or {}
+    provider_key_map = {
+        "google": request_keys.get("google") or GOOGLE_API_KEY,
+        "openrouter": request_keys.get("openrouter") or OPENROUTER_API_KEY,
+        "cerebras": request_keys.get("cerebras") or CEREBRAS_API_KEY,
+        "or": request_keys.get("openrouter") or OPENROUTER_API_KEY,
+    }
+    return provider_key_map.get(provider)
+
+
+async def query_google(
+    model: str,
+    messages: List[Dict[str, str]],
+    timeout: float = 20.0,
+    temperature: Optional[float] = None,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
+) -> Optional[Dict[str, Any]]:
     """Query Google Gemini API directly."""
+    api_key = resolve_api_key("google", api_keys)
+    if not api_key:
+        return None
+
     url = GOOGLE_API_URL.format(model=model)
     headers = {"Content-Type": "application/json"}
-    params = {"key": GOOGLE_API_KEY}
+    params = {"key": api_key}
     
     contents = []
     for m in messages:
@@ -74,10 +101,20 @@ async def query_google(model: str, messages: List[Dict[str, str]], timeout: floa
         print(f"Google API Error ({model}): {e}")
     return None
 
-async def query_openrouter(model: str, messages: List[Dict[str, str]], timeout: float = 30.0, temperature: Optional[float] = None) -> Optional[Dict[str, Any]]:
+async def query_openrouter(
+    model: str,
+    messages: List[Dict[str, str]],
+    timeout: float = 30.0,
+    temperature: Optional[float] = None,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
+) -> Optional[Dict[str, Any]]:
     """Query OpenRouter API."""
+    api_key = resolve_api_key("openrouter", api_keys)
+    if not api_key:
+        return None
+
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://github.com/karpathy/llm-council",
         "X-Title": "LLM Council",
@@ -106,10 +143,20 @@ async def query_openrouter(model: str, messages: List[Dict[str, str]], timeout: 
         print(f"OpenRouter API Error ({model}): {e}")
     return None
 
-async def query_cerebras(model: str, messages: List[Dict[str, str]], timeout: float = 30.0, temperature: Optional[float] = None) -> Optional[Dict[str, Any]]:
+async def query_cerebras(
+    model: str,
+    messages: List[Dict[str, str]],
+    timeout: float = 30.0,
+    temperature: Optional[float] = None,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
+) -> Optional[Dict[str, Any]]:
     """Query Cerebras API (OpenAI compatible)."""
+    api_key = resolve_api_key("cerebras", api_keys)
+    if not api_key:
+        return None
+
     headers = {
-        "Authorization": f"Bearer {CEREBRAS_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     payload = {"model": model, "messages": messages}
@@ -130,19 +177,56 @@ async def query_cerebras(model: str, messages: List[Dict[str, str]], timeout: fl
         print(f"Cerebras API Error ({model}): {e}")
     return None
 
-async def _raw_query_provider(provider: str, model: str, messages: List[Dict[str, str]], temperature: Optional[float] = None, timeout: float = 20.0) -> Optional[Dict[str, Any]]:
+async def _raw_query_provider(
+    provider: str,
+    model: str,
+    messages: List[Dict[str, str]],
+    temperature: Optional[float] = None,
+    timeout: float = 20.0,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
+) -> Optional[Dict[str, Any]]:
     """Internal helper to route to the correct provider function."""
     if provider == "google":
-        return await query_google(model, messages, timeout=timeout, temperature=temperature)
+        return await query_google(
+            model,
+            messages,
+            timeout=timeout,
+            temperature=temperature,
+            api_keys=api_keys,
+        )
     elif provider == "openrouter":
-        return await query_openrouter(model, messages, timeout=timeout, temperature=temperature)
+        return await query_openrouter(
+            model,
+            messages,
+            timeout=timeout,
+            temperature=temperature,
+            api_keys=api_keys,
+        )
     elif provider == "cerebras":
-        return await query_cerebras(model, messages, timeout=timeout, temperature=temperature)
+        return await query_cerebras(
+            model,
+            messages,
+            timeout=timeout,
+            temperature=temperature,
+            api_keys=api_keys,
+        )
     elif provider == "or":
-        return await query_openrouter(model, messages, timeout=timeout, temperature=temperature)
+        return await query_openrouter(
+            model,
+            messages,
+            timeout=timeout,
+            temperature=temperature,
+            api_keys=api_keys,
+        )
     return None
 
-async def query_model_any(model_id: str, messages: List[Dict[str, str]], temperature: Optional[float] = None, timeout: float = 20.0) -> Optional[Dict[str, Any]]:
+async def query_model_any(
+    model_id: str,
+    messages: List[Dict[str, str]],
+    temperature: Optional[float] = None,
+    timeout: float = 20.0,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
+) -> Optional[Dict[str, Any]]:
     """Routes a model ID and tries original name first, then an fixed alias if it fails."""
     if '/' not in model_id:
         return None
@@ -150,7 +234,14 @@ async def query_model_any(model_id: str, messages: List[Dict[str, str]], tempera
     provider, model = model_id.split('/', 1)
     
     # 1. Сначала пробуем РОДНОЕ название от пользователя
-    result = await _raw_query_provider(provider, model, messages, temperature=temperature, timeout=timeout)
+    result = await _raw_query_provider(
+        provider,
+        model,
+        messages,
+        temperature=temperature,
+        timeout=timeout,
+        api_keys=api_keys,
+    )
     if result:
         return result
         
@@ -174,7 +265,14 @@ async def query_model_any(model_id: str, messages: List[Dict[str, str]], tempera
     # Если название изменилось - пробуем второй раз
     if fixed_model != model:
         print(f"Original {provider}/{model} failed, trying fixed version: {provider}/{fixed_model}...")
-        return await _raw_query_provider(provider, fixed_model, messages, temperature=temperature, timeout=timeout)
+        return await _raw_query_provider(
+            provider,
+            fixed_model,
+            messages,
+            temperature=temperature,
+            timeout=timeout,
+            api_keys=api_keys,
+        )
     
     return None
 
@@ -183,6 +281,7 @@ async def api_call_with_failover(
     messages: List[Dict[str, str]], 
     temperature: Optional[float] = None,
     override_chains: Optional[Dict[str, List[str]]] = None,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
     per_model_timeout: float = 45.0  # Balanced timeout for code generation
 ) -> Optional[Dict[str, Any]]:
     """Implements the failover cycle for a provider team with fast switching."""
@@ -199,7 +298,12 @@ async def api_call_with_failover(
         team = ProviderTeam(team_name, models)
 
     if not team:
-        return await query_model_any(team_name, messages, temperature=temperature)
+        return await query_model_any(
+            team_name,
+            messages,
+            temperature=temperature,
+            api_keys=api_keys,
+        )
     
     for _ in range(len(team.models)):
         model_id = team.get_best_available_model()
@@ -207,7 +311,13 @@ async def api_call_with_failover(
             break
             
         # Fast timeout per model - if it fails, switch quickly
-        result = await query_model_any(model_id, messages, temperature=temperature, timeout=per_model_timeout)
+        result = await query_model_any(
+            model_id,
+            messages,
+            temperature=temperature,
+            timeout=per_model_timeout,
+            api_keys=api_keys,
+        )
         if result:
             return result
         else:
@@ -222,13 +332,20 @@ async def query_model(
     messages: List[Dict[str, str]],
     timeout: float = 30.0,
     temperature: Optional[float] = None,
-    override_chains: Optional[Dict[str, List[str]]] = None
+    override_chains: Optional[Dict[str, List[str]]] = None,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Main entry point for querying a 'model' (which can be a team or a direct ID)."""
     try:
         # Wrap everything in a timeout to ensure we don't hang forever
         return await asyncio.wait_for(
-            api_call_with_failover(model, messages, temperature=temperature, override_chains=override_chains),
+            api_call_with_failover(
+                model,
+                messages,
+                temperature=temperature,
+                override_chains=override_chains,
+                api_keys=api_keys,
+            ),
             timeout=timeout
         )
     except asyncio.TimeoutError:
@@ -242,7 +359,8 @@ async def query_models_parallel(
     models: List[str],
     messages: List[Dict[str, str]],
     temperature: Optional[float] = None,
-    override_chains: Optional[Dict[str, List[str]]] = None
+    override_chains: Optional[Dict[str, List[str]]] = None,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     """Query multiple models (teams) in parallel with extended timeout."""
     # Extended stage limit for slow models
@@ -250,7 +368,16 @@ async def query_models_parallel(
     
     # Wrap coroutines in Tasks properly with longer timeout per model
     tasks = [
-        asyncio.create_task(query_model(m, messages, timeout=90.0, temperature=temperature, override_chains=override_chains)) 
+        asyncio.create_task(
+            query_model(
+                m,
+                messages,
+                timeout=90.0,
+                temperature=temperature,
+                override_chains=override_chains,
+                api_keys=api_keys,
+            )
+        )
         for m in models
     ]
     

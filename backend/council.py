@@ -8,7 +8,8 @@ async def stage1_collect_responses(
     history: List[Dict[str, str]] = None,
     council_models: List[str] = COUNCIL_MODELS,
     temperature: Optional[float] = None,
-    override_chains: Optional[Dict[str, List[str]]] = None
+    override_chains: Optional[Dict[str, List[str]]] = None,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Stage 1: Collect individual responses from all council models.
@@ -23,7 +24,8 @@ async def stage1_collect_responses(
         council_models, 
         messages, 
         temperature=temperature,
-        override_chains=override_chains
+        override_chains=override_chains,
+        api_keys=api_keys,
     )
 
     # Format results
@@ -46,7 +48,8 @@ async def stage2_collect_rankings(
     history: List[Dict[str, str]] = None,
     council_models: List[str] = COUNCIL_MODELS,
     temperature: Optional[float] = None,
-    override_chains: Optional[Dict[str, List[str]]] = None
+    override_chains: Optional[Dict[str, List[str]]] = None,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
     Stage 2: Each model ranks the anonymized responses.
@@ -103,7 +106,8 @@ Now provide your evaluation and ranking:"""
         council_models, 
         messages, 
         temperature=temperature,
-        override_chains=override_chains
+        override_chains=override_chains,
+        api_keys=api_keys,
     )
 
     # Format results
@@ -129,6 +133,7 @@ async def stage3_synthesize_final(
     chairman_model: str = CHAIRMAN_MODEL,
     temperature: Optional[float] = None,
     override_chains: Optional[Dict[str, List[str]]] = None,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
     max_context_chars: int = 12000
 ) -> Dict[str, Any]:
     """
@@ -193,7 +198,8 @@ Provide a clear, well-reasoned final answer that represents the council's collec
         messages, 
         timeout=120.0,  # Extended timeout for synthesis
         temperature=temperature,
-        override_chains=override_chains
+        override_chains=override_chains,
+        api_keys=api_keys,
     )
 
     if response is None:
@@ -297,7 +303,10 @@ def calculate_aggregate_rankings(
     return aggregate
 
 
-async def generate_conversation_title(user_query: str) -> str:
+async def generate_conversation_title(
+    user_query: str,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
+) -> str:
     """
     Generate a short title for a conversation based on the first user message.
     """
@@ -316,7 +325,12 @@ async def generate_conversation_title(user_query: str) -> str:
 
     try:
         # Use a reliable fast model
-        response = await query_model("google/gemini-2.5-flash", messages, timeout=10.0)
+        response = await query_model(
+            "google/gemini-2.5-flash",
+            messages,
+            timeout=10.0,
+            api_keys=api_keys,
+        )
         
         if response and response.get('content'):
             title = response['content'].strip().strip('"\'*')
@@ -342,7 +356,8 @@ async def run_full_council(
     council_models: List[str] = COUNCIL_MODELS,
     chairman_model: str = CHAIRMAN_MODEL,
     temperature: Optional[float] = None,
-    override_chains: Optional[Dict[str, List[str]]] = None
+    override_chains: Optional[Dict[str, List[str]]] = None,
+    api_keys: Optional[Dict[str, Optional[str]]] = None,
 ) -> Tuple[List, List, Dict, Dict]:
     """
     Run the complete 3-stage council process.
@@ -353,7 +368,8 @@ async def run_full_council(
         history=history,
         council_models=council_models, 
         temperature=temperature,
-        override_chains=override_chains
+        override_chains=override_chains,
+        api_keys=api_keys,
     )
 
     # If no models responded successfully, return error
@@ -370,7 +386,8 @@ async def run_full_council(
         history=history,
         council_models=council_models,
         temperature=temperature,
-        override_chains=override_chains
+        override_chains=override_chains,
+        api_keys=api_keys,
     )
 
     # Calculate aggregate rankings
@@ -384,7 +401,8 @@ async def run_full_council(
         history=history,
         chairman_model=chairman_model,
         temperature=temperature,
-        override_chains=override_chains
+        override_chains=override_chains,
+        api_keys=api_keys,
     )
 
     # Prepare metadata
