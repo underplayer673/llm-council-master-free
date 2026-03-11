@@ -5,6 +5,55 @@ import { api } from './api';
 import translations from './translations';
 import './App.css';
 
+const defaultSettings = {
+  theme: 'dark',
+  lang: 'ru',
+  forceRussian: true,
+  autoDetectLang: true,
+  systemPrompt:
+    'Р“РѕРІРѕСЂРё Рё СЂР°СЃСЃСѓР¶РґР°Р№ РЅР° СЂСѓСЃСЃРєРѕРј. Р¤РёРЅР°Р»СЊРЅС‹Р№ РѕС‚РІРµС‚ РѕР±СЏР·Р°РЅ Р±С‹С‚СЊ РЅР° СЂСѓСЃСЃРєРѕРј СЏР·С‹РєРµ.\n\nРСЃРїРѕР»СЊР·СѓР№ Markdown РґР»СЏ С„РѕСЂРјР°С‚РёСЂРѕРІР°РЅРёСЏ. Р•СЃР»Рё СѓРјРµСЃС‚РЅРѕ, РёСЃРїРѕР»СЊР·СѓР№ С‚Р°Р±Р»РёС†С‹ Рё Р±Р»РѕРєРё РєРѕРґР°. Р•СЃР»Рё РЅРµ РїРѕРЅРёРјР°РµС€СЊ РІРѕРїСЂРѕСЃР°, С‡РµСЃС‚РЅРѕ СЃРєР°Р¶Рё РѕР± СЌС‚РѕРј.',
+  chairman: 'Team Elite',
+  temperature: 0.7,
+  apiKeys: {
+    openrouter: '',
+    google: '',
+    cerebras: '',
+  },
+  chains: {
+    'Team Elite': [
+      'google/gemini-2.5-flash',
+      'openrouter/stepfun/step-3.5-flash:free',
+      'google/gemini-2.5-flash-lite',
+    ],
+    'Team Pro': [
+      'openrouter/arcee-ai/trinity-large-preview:free',
+      'google/gemini-2.5-flash-lite',
+      'google/gemma-3-27b',
+      'openrouter/google/gemma-3-27b:free',
+    ],
+    'Team Support': [
+      'openrouter/nvidia/nemotron-nano-9b-v2:free',
+      'cerebras/llama3.1-8b',
+      'google/gemma-3-4b',
+      'openrouter/google/gemma-3-4b-it:free',
+      'openrouter/liquid/lfm-2.5-1.2b-instruct:free',
+      'openrouter/openrouter/auto-router',
+    ],
+  },
+};
+
+function mergeSettings(savedSettings) {
+  return {
+    ...defaultSettings,
+    ...savedSettings,
+    apiKeys: {
+      ...defaultSettings.apiKeys,
+      ...(savedSettings?.apiKeys || {}),
+    },
+    chains: savedSettings?.chains || defaultSettings.chains,
+  };
+}
+
 function App() {
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
@@ -48,7 +97,7 @@ function App() {
       },
     };
 
-    return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
+    return saved ? mergeSettings(JSON.parse(saved)) : defaultSettings;
   });
 
   const t = translations[settings.lang] || translations.ru;
@@ -182,6 +231,9 @@ function App() {
     if (!actualActiveId) return;
 
     const streamConversationId = actualActiveId;
+    const apiKeys = Object.fromEntries(
+      Object.entries(settings.apiKeys || {}).map(([provider, value]) => [provider, value?.trim() || ''])
+    );
     setStreamingChatIds((prev) => new Set(prev).add(streamConversationId));
 
     try {
@@ -319,6 +371,7 @@ function App() {
           temperature: settings.temperature,
           override_chains: settings.chains,
           council_models: Object.keys(settings.chains),
+          api_keys: apiKeys,
           force_russian: settings.forceRussian,
           system_prompt: settings.systemPrompt,
         },

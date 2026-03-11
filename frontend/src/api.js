@@ -126,6 +126,7 @@ export const api = {
           temperature: config.temperature,
           override_chains: config.override_chains,
           council_models: config.council_models,
+          api_keys: config.api_keys,
           force_russian: config.force_russian,
           system_prompt: config.system_prompt
         }),
